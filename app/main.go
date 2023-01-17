@@ -24,34 +24,47 @@ func main() {
 func run(name string, args []string) error {
 	rootDir := filepath.Join(os.TempDir(), "mydocker", uitoa(uint(rand.Uint32())))
 	if err := os.MkdirAll(filepath.Join(rootDir, filepath.Dir(name)), os.ModeDir); err != nil {
-		return err
+		return fmt.Errorf("failed to create rootdir: %w", err)
 	}
 	defer os.RemoveAll(rootDir)
 
 	src, err := os.Open(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	srcInfo, err := src.Stat()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get source file status: %w", err)
 	}
 
 	dst, err := os.OpenFile(filepath.Join(rootDir, name), os.O_CREATE|os.O_WRONLY, srcInfo.Mode())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open destination file: %w", err)
 	}
 	if _, err := io.Copy(dst, src); err != nil {
-		return err
+		return fmt.Errorf("failed to copy file from %s to %s: %w", src.Name(), dst.Name(), err)
 	}
 
-	src.Close()
-	dst.Close()
+	if err := src.Close(); err != nil {
+		return fmt.Errorf("failed to close source file: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("failed to close destination file: %w", err)
+	}
 
 	// workaround for chroot
-	os.Mkdir(filepath.Join(rootDir, "dev"), os.ModeDir)
-	devnull, _ := os.Create(filepath.Join(rootDir, "/dev/null"))
-	devnull.Close()
+	if err := os.Mkdir(filepath.Join(rootDir, "dev"), os.ModeDir); err != nil {
+		if !os.IsExist(err) {
+			return fmt.Errorf("failed to create /dev directory: %w", err)
+		}
+		devnull, err := os.Create(filepath.Join(rootDir, "/dev/null"))
+		if err != nil {
+			return fmt.Errorf("failed to create /dev/null file: %w", err)
+		}
+		if err := devnull.Close(); err != nil {
+			return fmt.Errorf("failed to close /dev/null file: %w", err)
+		}
+	}
 
 	chrootArgs := []string{rootDir, name}
 	chrootArgs = append(chrootArgs, args...)
